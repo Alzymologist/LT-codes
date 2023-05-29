@@ -7,12 +7,14 @@ edition = "2021"
 
 bitvec = {version = "1.0.1", default_features = false, features = ["alloc"]}
 blake2-rfc = {version = "0.2.18", default-features = false}
-rand = "0.8.4"
-rand_core = "0.6.4"
-rand_pcg = "0.3.1"
+rand = {version = "0.8.4", default-features = false, features = ["alloc"]}
+rand_core = {version = "0.6.4", default-features = false}
+rand_pcg = {version = "0.3.1", default-features = false}
 
 [features]
 
 default = ["std"]
-
 std = []
+
+[dev-dependencies]
+rand = {version = "0.8.4"}
