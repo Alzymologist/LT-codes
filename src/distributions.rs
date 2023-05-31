@@ -65,7 +65,7 @@ impl Distributions {
         let range_distribution =
             WeightedIndex::new(&weights).map_err(|_| LTError::WeightedSettings)?;
 
-        let block_number_distribution = Uniform::new_inclusive(0, n - 1);
+        let block_number_distribution = Uniform::new(0, n);
 
         Ok(Self {
             range_distribution,

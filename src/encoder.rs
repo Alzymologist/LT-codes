@@ -42,18 +42,22 @@ impl Encoder {
             return Err(LTError::LengthMismatch);
         }
 
-        let mut rng = make_prng(self.id);
+        loop {
+            let mut rng = make_prng(self.id);
 
-        let d = self.range_distribution.sample(&mut rng);
+            let d = self.range_distribution.sample(&mut rng);
 
-        let mut block = self.select_block(&mut rng, msg);
-        for _n in 1..d {
-            let block_addition = self.select_block(&mut rng, msg);
-            block.xor_with(&block_addition);
+            let mut block = self.select_block(&mut rng, msg);
+            for _n in 1..d {
+                let block_addition = self.select_block(&mut rng, msg);
+                block.xor_with(&block_addition);
+            }
+            let id = self.id;
+            self.id = self.id.wrapping_add(1);
+            if !block.is_empty() {
+                return Ok(Packet::new(self.msg_len, id, block));
+            }
         }
-        let id = self.id;
-        self.id = self.id.wrapping_add(1);
-        Ok(Packet::new(self.msg_len, id, block))
     }
 
     fn select_block(&self, rng: &mut Lcg64Xsh32, msg: &[u8]) -> Block {

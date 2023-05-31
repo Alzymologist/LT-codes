@@ -4,7 +4,6 @@ use alloc::vec::Vec;
 #[cfg(feature = "std")]
 use std::vec::Vec;
 
-use bitvec::{bitvec, prelude::Msb0, vec::BitVec};
 use rand::distributions::{Distribution, Uniform, WeightedIndex};
 
 use crate::block::{Block, IsolatedBlock, MixedBlock, BLOCK_SIZE};
@@ -28,6 +27,11 @@ pub trait ExternalMemory<A: ExternalAddress> {
     fn read_external(&mut self, address: &A, len: usize) -> Vec<u8>;
 }
 
+struct AddressBitBlockFlag<A: ExternalAddress> {
+    address: A,
+    bit: u8, //0..7
+}
+
 /// Buffer element length.
 ///
 /// Buffer element consists of usage flag, u16 id, and block itself.
@@ -39,7 +43,6 @@ where
 {
     pub start_address: A,
     pub msg_len: [u8; 3],
-    pub finalized_content: BitVec<u8, Msb0>,
     pub number_packets_in_buffer: u16, // total u16::MAX numbers of original packets, should fit
     pub range_distribution: WeightedIndex<f32>,
     pub block_number_distribution: Uniform<usize>,
@@ -59,16 +62,72 @@ impl<A: ExternalAddress> DecoderMetal<A> {
             }
         };
         let distributions = Distributions::calculate(msg_usize)?;
+        let mut flag_writer_address = A::zero();
+        let number_of_flag_bytes = {
+            if number_of_blocks % 8 == 0 {
+                number_of_blocks / 8
+            } else {
+                number_of_blocks / 8 + 1
+            }
+        };
+        for _i in 0..number_of_flag_bytes {
+            external_memory.write_external(&flag_writer_address, &[0]);
+            flag_writer_address.shift(1);
+        }
         let mut decoder = Self {
             start_address: A::zero(),
             msg_len: packet.msg_len,
-            finalized_content: bitvec![u8, Msb0; 0; number_of_blocks],
             number_packets_in_buffer: 0,
             range_distribution: distributions.range_distribution,
             block_number_distribution: distributions.block_number_distribution,
         };
         decoder.add_block(external_memory, packet.id, packet.block);
         Ok(decoder)
+    }
+
+    fn address_finalized_block_flag(&self, block_number: usize) -> AddressBitBlockFlag<A> {
+        let msg_usize = msg_len_as_usize(self.msg_len);
+        let number_of_blocks = {
+            if msg_usize % BLOCK_SIZE == 0 {
+                msg_usize / BLOCK_SIZE
+            } else {
+                msg_usize / BLOCK_SIZE + 1
+            }
+        };
+
+        if block_number > number_of_blocks {
+            panic!("block number too high")
+        }
+
+        let mut address = self.start_address;
+        address.shift(block_number / 8);
+
+        AddressBitBlockFlag {
+            address,
+            bit: (block_number % 8) as u8,
+        }
+    }
+
+    fn is_block_finalized<M: ExternalMemory<A>>(
+        &self,
+        external_memory: &mut M,
+        block_number: usize,
+    ) -> bool {
+        let address_bit_block_flag = self.address_finalized_block_flag(block_number);
+        let flag_set_bytes = external_memory.read_external(&address_bit_block_flag.address, 1)[0];
+        (flag_set_bytes & (1 << address_bit_block_flag.bit)) != 0
+    }
+
+    fn mark_block_finalized<M: ExternalMemory<A>>(
+        &self,
+        external_memory: &mut M,
+        block_number: usize,
+    ) {
+        let address_bit_block_flag = self.address_finalized_block_flag(block_number);
+        let mut flag_set_bytes =
+            external_memory.read_external(&address_bit_block_flag.address, 1)[0];
+        flag_set_bytes |= 1 << address_bit_block_flag.bit;
+        external_memory.write_external(&address_bit_block_flag.address, &[flag_set_bytes]);
     }
 
     fn add_block<M: ExternalMemory<A>>(
@@ -114,23 +173,32 @@ impl<A: ExternalAddress> DecoderMetal<A> {
         }
     }
 
-    pub fn is_ready(&self) -> bool {
-        self.finalized_content.iter().fold(
-            true,
-            |total_flag, element| {
-                if !element.as_ref() {
-                    false
-                } else {
-                    total_flag
-                }
-            },
-        )
+    pub fn is_ready<M: ExternalMemory<A>>(&self, external_memory: &mut M) -> bool {
+        let mut all_finalized = true;
+        let msg_usize = msg_len_as_usize(self.msg_len);
+        let number_of_blocks = {
+            if msg_usize % BLOCK_SIZE == 0 {
+                msg_usize / BLOCK_SIZE
+            } else {
+                msg_usize / BLOCK_SIZE + 1
+            }
+        };
+        for i in 0..number_of_blocks {
+            if !self.is_block_finalized(external_memory, i) {
+                all_finalized = false;
+                break;
+            }
+        }
+        all_finalized
     }
 
-    pub fn try_read(&self) -> Option<ExternalData<A>> {
-        if self.is_ready() {
+    pub fn try_read<M: ExternalMemory<A>>(
+        &self,
+        external_memory: &mut M,
+    ) -> Option<ExternalData<A>> {
+        if self.is_ready(external_memory) {
             Some(ExternalData {
-                start_address: self.start_address,
+                start_address: self.address_isolated_block(0),
                 len: msg_len_as_usize(self.msg_len),
             })
         } else {
@@ -138,16 +206,22 @@ impl<A: ExternalAddress> DecoderMetal<A> {
         }
     }
 
-    pub fn number_of_collected(&self) -> usize {
-        self.finalized_content
-            .iter()
-            .fold(0, |total_number, element| {
-                if *element {
-                    total_number + 1
-                } else {
-                    total_number
-                }
-            })
+    pub fn number_of_collected<M: ExternalMemory<A>>(&self, external_memory: &mut M) -> usize {
+        let mut number_of_collected = 0;
+        let msg_usize = msg_len_as_usize(self.msg_len);
+        let number_of_blocks = {
+            if msg_usize % BLOCK_SIZE == 0 {
+                msg_usize / BLOCK_SIZE
+            } else {
+                msg_usize / BLOCK_SIZE + 1
+            }
+        };
+        for i in 0..number_of_blocks {
+            if self.is_block_finalized(external_memory, i) {
+                number_of_collected += 1
+            }
+        }
+        number_of_collected
     }
 
     fn block_numbers_for_id(&self, id: u16) -> Vec<usize> {
@@ -178,9 +252,8 @@ impl<A: ExternalAddress> DecoderMetal<A> {
         external_memory: &mut M,
         isolated_block: IsolatedBlock,
     ) {
-        if !self.finalized_content[isolated_block.block_number] {
-            self.finalized_content
-                .replace(isolated_block.block_number, true);
+        if !self.is_block_finalized(external_memory, isolated_block.block_number) {
+            self.mark_block_finalized(external_memory, isolated_block.block_number);
             self.write_isolated_block(external_memory, &isolated_block);
             for i in 0..self.number_packets_in_buffer {
                 if self.read_buffer_block_active_flag(external_memory, i) {
@@ -240,7 +313,7 @@ impl<A: ExternalAddress> DecoderMetal<A> {
         let block_numbers = self.block_numbers_for_id(id);
         block_numbers
             .into_iter()
-            .filter(|block_number| !self.finalized_content[*block_number])
+            .filter(|block_number| !self.is_block_finalized(external_memory, *block_number))
             .collect()
     }
 
@@ -252,7 +325,7 @@ impl<A: ExternalAddress> DecoderMetal<A> {
     ) {
         let mut index_set_to_remove = Vec::new();
         for (i, block_number) in mixed_block.block_numbers.iter().enumerate() {
-            if self.finalized_content[*block_number] {
+            if self.is_block_finalized(external_memory, *block_number) {
                 index_set_to_remove.push(i);
                 let already_known_block = self.read_isolated_block(external_memory, *block_number);
                 mixed_block.body.xor_with(&already_known_block);
@@ -291,9 +364,16 @@ impl<A: ExternalAddress> DecoderMetal<A> {
                 msg_usize / BLOCK_SIZE + 1
             }
         };
+        let number_of_flag_bytes = {
+            if number_of_blocks % 8 == 0 {
+                number_of_blocks / 8
+            } else {
+                number_of_blocks / 8 + 1
+            }
+        };
         if isolated_block_number < number_of_blocks {
             let mut address = self.start_address;
-            address.shift(isolated_block_number * BLOCK_SIZE);
+            address.shift(number_of_flag_bytes + isolated_block_number * BLOCK_SIZE);
             address
         } else {
             panic!("requested address of non-existing isolated block {isolated_block_number}")
@@ -332,8 +412,16 @@ impl<A: ExternalAddress> DecoderMetal<A> {
             }
         };
 
+        let number_of_flag_bytes = {
+            if number_of_blocks % 8 == 0 {
+                number_of_blocks / 8
+            } else {
+                number_of_blocks / 8 + 1
+            }
+        };
+
         // start of buffer
-        address.shift(number_of_blocks * BLOCK_SIZE);
+        address.shift(number_of_flag_bytes + number_of_blocks * BLOCK_SIZE);
         address
     }
 
@@ -427,7 +515,8 @@ mod test {
     use super::*;
     use crate::encoder::Encoder;
 
-    const MSG_LEN: usize = 500_000;
+    const MSG_LEN_LONG: usize = 500_002;
+    const MSG_LEN_SHORT: usize = 357;
     const COUNTER_STOP: usize = 4000;
 
     #[derive(Clone, Copy, Debug)]
@@ -457,8 +546,7 @@ mod test {
         }
     }
 
-    #[test]
-    fn full_cycle_metal_mock() {
+    fn full_cycle_metal_mock<const MSG_LEN: usize>() {
         let mut rng = rand::thread_rng();
 
         let mut msg = [0; MSG_LEN];
@@ -472,13 +560,19 @@ mod test {
 
         loop {
             let packet = encoder.make_packet(&msg).unwrap();
+            if packet.block.is_empty() {
+                panic!("empty block!")
+            }
             maybe_decoder = match maybe_decoder {
                 None => Some(DecoderMetal::init(&mut external_memory, packet).unwrap()),
                 Some(mut decoder) => {
                     decoder.add_packet(&mut external_memory, packet).unwrap();
-                    if let Some(a) = decoder.try_read() {
+                    if let Some(a) = decoder.try_read(&mut external_memory) {
                         assert_eq!(a.len, MSG_LEN);
-                        assert_eq!(unsafe { &EM[..a.len] }, msg);
+                        assert_eq!(
+                            unsafe { &EM[a.start_address.0..a.start_address.0 + a.len] },
+                            msg
+                        );
                         break;
                     }
                     Some(decoder)
@@ -489,5 +583,15 @@ mod test {
             }
             counter += 1;
         }
+    }
+
+    #[test]
+    fn long_data_full_cycle_metal_mock() {
+        full_cycle_metal_mock::<MSG_LEN_LONG>()
+    }
+
+    #[test]
+    fn short_data_full_cycle_metal_mock() {
+        full_cycle_metal_mock::<MSG_LEN_SHORT>()
     }
 }

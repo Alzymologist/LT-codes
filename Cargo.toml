@@ -5,7 +5,6 @@ edition = "2021"
 
 [dependencies]
 
-bitvec = {version = "1.0.1", default_features = false, features = ["alloc"]}
 blake2-rfc = {version = "0.2.18", default-features = false}
 rand = {version = "0.8.4", default-features = false, features = ["alloc"]}
 rand_core = {version = "0.6.4", default-features = false}
