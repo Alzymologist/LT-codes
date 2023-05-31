@@ -1,4 +1,5 @@
 #![no_std]
+#![deny(unused_crate_dependencies)]
 
 #[cfg(not(feature = "std"))]
 extern crate alloc;

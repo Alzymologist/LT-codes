@@ -206,11 +206,11 @@ mod test {
     use super::*;
     use crate::encoder::Encoder;
 
-    const MSG_LEN: usize = 500_000;
+    const MSG_LEN_LONG: usize = 500_002;
+    const MSG_LEN_SHORT: usize = 357;
     const COUNTER_STOP: usize = 4000;
 
-    #[test]
-    fn full_cycle() {
+    fn full_cycle<const MSG_LEN: usize>() {
         let mut rng = rand::thread_rng();
 
         let mut msg = [0; MSG_LEN];
@@ -222,6 +222,9 @@ mod test {
 
         loop {
             let packet = encoder.make_packet(&msg).unwrap();
+            if packet.block.is_empty() {
+                panic!("empty block!")
+            }
             maybe_decoder = match maybe_decoder {
                 None => Some(Decoder::init(packet).unwrap()),
                 Some(mut decoder) => {
@@ -239,5 +242,15 @@ mod test {
             }
             counter += 1;
         }
+    }
+
+    #[test]
+    fn long_data_full_cycle() {
+        full_cycle::<MSG_LEN_LONG>()
+    }
+
+    #[test]
+    fn short_data_full_cycle() {
+        full_cycle::<MSG_LEN_SHORT>()
     }
 }
