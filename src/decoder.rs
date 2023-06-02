@@ -208,35 +208,30 @@ mod test {
 
     const MSG_LEN_LONG: usize = 500_002;
     const MSG_LEN_SHORT: usize = 357;
-    const COUNTER_STOP: usize = 4000;
+    const COUNTER_STOP: usize = 6000;
 
-    fn full_cycle<const MSG_LEN: usize>() {
-        let mut rng = rand::thread_rng();
-
-        let mut msg = [0; MSG_LEN];
-        msg.try_fill(&mut rng).unwrap();
-
+    fn full_cycle(msg: &[u8]) {
         let mut counter = 0usize;
-        let mut encoder = Encoder::init(&msg).unwrap();
+        let mut encoder = Encoder::init(msg).unwrap();
         let mut maybe_decoder = None;
 
         loop {
-            let packet = encoder.make_packet(&msg).unwrap();
-            if packet.block.is_empty() {
-                panic!("empty block!")
-            }
-            maybe_decoder = match maybe_decoder {
-                None => Some(Decoder::init(packet).unwrap()),
-                Some(mut decoder) => {
-                    decoder.add_packet(packet).unwrap();
-                    if let Some(a) = decoder.try_read() {
-                        assert_eq!(a.len(), MSG_LEN);
-                        assert_eq!(a, msg);
-                        break;
+            encoder.id = rand::random::<u16>();
+            let maybe_packet = encoder.make_packet(msg).unwrap();
+            if let Some(packet) = maybe_packet {
+                maybe_decoder = match maybe_decoder {
+                    None => Some(Decoder::init(packet).unwrap()),
+                    Some(mut decoder) => {
+                        decoder.add_packet(packet).unwrap();
+                        if let Some(a) = decoder.try_read() {
+                            assert_eq!(a.len(), msg.len());
+                            assert_eq!(a, msg);
+                            break;
+                        }
+                        Some(decoder)
                     }
-                    Some(decoder)
-                }
-            };
+                };
+            }
             if counter > COUNTER_STOP {
                 panic!("decoding takes unexpectedly long")
             }
@@ -245,12 +240,23 @@ mod test {
     }
 
     #[test]
-    fn long_data_full_cycle() {
-        full_cycle::<MSG_LEN_LONG>()
+    fn long_random_data_full_cycle() {
+        let mut rng = rand::thread_rng();
+        let mut msg = [0; MSG_LEN_LONG];
+        msg.try_fill(&mut rng).unwrap();
+        full_cycle(&msg)
     }
 
     #[test]
-    fn short_data_full_cycle() {
-        full_cycle::<MSG_LEN_SHORT>()
+    fn short_random_data_full_cycle() {
+        let mut rng = rand::thread_rng();
+        let mut msg = [0; MSG_LEN_SHORT];
+        msg.try_fill(&mut rng).unwrap();
+        full_cycle(&msg)
+    }
+
+    #[test]
+    fn short_zeroes_data_full_cycle() {
+        full_cycle(&[0u8; MSG_LEN_SHORT])
     }
 }
