@@ -12,10 +12,6 @@ pub struct Block {
 }
 
 impl Block {
-    pub(crate) fn is_empty(&self) -> bool {
-        self.content == [0; BLOCK_SIZE]
-    }
-
     pub(crate) fn xor_with(&mut self, block: &Block) {
         for i in 0..BLOCK_SIZE {
             self.content[i] ^= block.content[i]

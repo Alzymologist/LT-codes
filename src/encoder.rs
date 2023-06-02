@@ -1,15 +1,14 @@
-use rand::distributions::{Distribution, Uniform, WeightedIndex};
-use rand_pcg::Lcg64Xsh32;
+use rand::distributions::{Uniform, WeightedIndex};
 
 use crate::block::{Block, BLOCK_SIZE};
 use crate::distributions::Distributions;
 use crate::error::LTError;
 use crate::packet::Packet;
-use crate::utils::{make_prng, msg_len_as_usize};
+use crate::utils::{block_numbers_for_id, msg_len_as_usize};
 
 #[derive(Debug)]
 pub struct Encoder {
-    id: u16,
+    pub(crate) id: u16,
     msg_len: [u8; 3],
     range_distribution: WeightedIndex<f32>,
     block_number_distribution: Uniform<usize>,
@@ -37,31 +36,37 @@ impl Encoder {
         })
     }
 
-    pub fn make_packet(&mut self, msg: &[u8]) -> Result<Packet, LTError> {
+    pub fn make_packet(&mut self, msg: &[u8]) -> Result<Option<Packet>, LTError> {
         if msg.len() != msg_len_as_usize(self.msg_len) {
             return Err(LTError::LengthMismatch);
         }
 
-        loop {
-            let mut rng = make_prng(self.id);
-
-            let d = self.range_distribution.sample(&mut rng);
-
-            let mut block = self.select_block(&mut rng, msg);
-            for _n in 1..d {
-                let block_addition = self.select_block(&mut rng, msg);
-                block.xor_with(&block_addition);
+        let block_numbers = block_numbers_for_id(
+            &self.range_distribution,
+            &self.block_number_distribution,
+            self.id,
+        );
+        let mut maybe_out: Option<Block> = None;
+        for block_number in block_numbers.into_iter() {
+            maybe_out = match maybe_out {
+                Some(mut out) => {
+                    let block_addition = self.select_block(block_number, msg);
+                    out.xor_with(&block_addition);
+                    Some(out)
+                }
+                None => Some(self.select_block(block_number, msg)),
             }
-            let id = self.id;
-            self.id = self.id.wrapping_add(1);
-            if !block.is_empty() {
-                return Ok(Packet::new(self.msg_len, id, block));
-            }
+        }
+        let id = self.id;
+        self.id = self.id.wrapping_add(1);
+        if let Some(block) = maybe_out {
+            Ok(Some(Packet::new(self.msg_len, id, block)))
+        } else {
+            Ok(None)
         }
     }
 
-    fn select_block(&self, rng: &mut Lcg64Xsh32, msg: &[u8]) -> Block {
-        let block_number = self.block_number_distribution.sample(rng);
+    fn select_block(&self, block_number: usize, msg: &[u8]) -> Block {
         let content = match msg.get(block_number * BLOCK_SIZE..(block_number + 1) * BLOCK_SIZE) {
             Some(a) => a.try_into().expect("static size"),
             None => {

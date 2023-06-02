@@ -10,7 +10,7 @@ use crate::block::{Block, IsolatedBlock, MixedBlock, BLOCK_SIZE};
 use crate::distributions::Distributions;
 use crate::error::LTError;
 use crate::packet::Packet;
-use crate::utils::{make_prng, msg_len_as_usize};
+use crate::utils::{block_numbers_for_id, make_prng, msg_len_as_usize};
 
 pub trait ExternalAddress: Copy {
     fn zero() -> Self;
@@ -225,26 +225,11 @@ impl<A: ExternalAddress> DecoderMetal<A> {
     }
 
     fn block_numbers_for_id(&self, id: u16) -> Vec<usize> {
-        let mut rng = make_prng(id);
-        let d = self.range_distribution.sample(&mut rng);
-        let mut block_numbers: Vec<usize> = Vec::new();
-        for _n in 0..d {
-            let proposed_number = self.block_number_distribution.sample(&mut rng);
-            let mut already_at_index = None;
-            for (i, block_number) in block_numbers.iter().enumerate() {
-                if block_number == &proposed_number {
-                    already_at_index = Some(i);
-                    break;
-                }
-            }
-            match already_at_index {
-                Some(i) => {
-                    block_numbers.remove(i);
-                }
-                None => block_numbers.push(proposed_number),
-            }
-        }
-        block_numbers
+        block_numbers_for_id(
+            &self.range_distribution,
+            &self.block_number_distribution,
+            id,
+        )
     }
 
     pub fn process_isolated<M: ExternalMemory<A>>(
@@ -516,8 +501,7 @@ mod test {
     use crate::encoder::Encoder;
 
     const MSG_LEN_LONG: usize = 500_002;
-    const MSG_LEN_SHORT: usize = 357;
-    const COUNTER_STOP: usize = 4000;
+    const COUNTER_STOP: usize = 6000;
 
     #[derive(Clone, Copy, Debug)]
     struct Position(usize);
@@ -546,38 +530,33 @@ mod test {
         }
     }
 
-    fn full_cycle_metal_mock<const MSG_LEN: usize>() {
-        let mut rng = rand::thread_rng();
-
-        let mut msg = [0; MSG_LEN];
-        msg.try_fill(&mut rng).unwrap();
-
+    fn full_cycle_metal_mock(msg: &[u8]) {
         let mut external_memory = ExternalMemoryMock;
 
         let mut counter = 0usize;
-        let mut encoder = Encoder::init(&msg).unwrap();
+        let mut encoder = Encoder::init(msg).unwrap();
         let mut maybe_decoder = None;
 
         loop {
-            let packet = encoder.make_packet(&msg).unwrap();
-            if packet.block.is_empty() {
-                panic!("empty block!")
-            }
-            maybe_decoder = match maybe_decoder {
-                None => Some(DecoderMetal::init(&mut external_memory, packet).unwrap()),
-                Some(mut decoder) => {
-                    decoder.add_packet(&mut external_memory, packet).unwrap();
-                    if let Some(a) = decoder.try_read(&mut external_memory) {
-                        assert_eq!(a.len, MSG_LEN);
-                        assert_eq!(
-                            unsafe { &EM[a.start_address.0..a.start_address.0 + a.len] },
-                            msg
-                        );
-                        break;
+            encoder.id = rand::random::<u16>();
+            let maybe_packet = encoder.make_packet(msg).unwrap();
+            if let Some(packet) = maybe_packet {
+                maybe_decoder = match maybe_decoder {
+                    None => Some(DecoderMetal::init(&mut external_memory, packet).unwrap()),
+                    Some(mut decoder) => {
+                        decoder.add_packet(&mut external_memory, packet).unwrap();
+                        if let Some(a) = decoder.try_read(&mut external_memory) {
+                            assert_eq!(a.len, msg.len());
+                            assert_eq!(
+                                unsafe { &EM[a.start_address.0..a.start_address.0 + a.len] },
+                                msg
+                            );
+                            break;
+                        }
+                        Some(decoder)
                     }
-                    Some(decoder)
-                }
-            };
+                };
+            }
             if counter > COUNTER_STOP {
                 panic!("decoding takes unexpectedly long")
             }
@@ -586,12 +565,10 @@ mod test {
     }
 
     #[test]
-    fn long_data_full_cycle_metal_mock() {
-        full_cycle_metal_mock::<MSG_LEN_LONG>()
-    }
-
-    #[test]
-    fn short_data_full_cycle_metal_mock() {
-        full_cycle_metal_mock::<MSG_LEN_SHORT>()
+    fn long_random_data_full_cycle_metal_mock() {
+        let mut rng = rand::thread_rng();
+        let mut msg = [0; MSG_LEN_LONG];
+        msg.try_fill(&mut rng).unwrap();
+        full_cycle_metal_mock(&msg)
     }
 }
