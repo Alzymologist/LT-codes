@@ -9,7 +9,7 @@ use rand::distributions::{Distribution, Uniform, WeightedIndex};
 use rand_core::SeedableRng;
 use rand_pcg::Lcg64Xsh32;
 
-pub fn make_prng(id: u16) -> Lcg64Xsh32 {
+fn make_prng(id: u16) -> Lcg64Xsh32 {
     let seed = blake2b(16, b"kampela", &id.to_be_bytes())
         .as_bytes()
         .try_into()

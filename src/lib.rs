@@ -19,4 +19,8 @@ pub mod distributions;
 pub mod encoder;
 pub mod error;
 pub mod packet;
+
+#[cfg(all(feature = "std", test))]
+mod real_packets;
+
 pub mod utils;

@@ -1,12 +1,12 @@
 use std::vec::Vec;
 
-use rand::distributions::{Distribution, Uniform, WeightedIndex};
+use rand::distributions::{Uniform, WeightedIndex};
 
 use crate::block::{Block, IsolatedBlock, MixedBlock, BLOCK_SIZE};
 use crate::distributions::Distributions;
 use crate::error::LTError;
 use crate::packet::Packet;
-use crate::utils::{make_prng, msg_len_as_usize};
+use crate::utils::{block_numbers_for_id, msg_len_as_usize};
 
 #[derive(Debug)]
 pub struct Decoder {
@@ -40,14 +40,11 @@ impl Decoder {
     }
 
     fn add_block(&mut self, id: u16, current_block: Block) {
-        let mut rng = make_prng(id);
-
-        let d = self.range_distribution.sample(&mut rng);
-
-        let mut block_numbers: Vec<usize> = Vec::new();
-        for _n in 0..d {
-            block_numbers.push(self.block_number_distribution.sample(&mut rng));
-        }
+        let block_numbers = block_numbers_for_id(
+            &self.range_distribution,
+            &self.block_number_distribution,
+            id,
+        );
 
         if block_numbers.len() == 1 {
             let isolated_block = IsolatedBlock {
@@ -60,6 +57,7 @@ impl Decoder {
                 body: current_block,
                 block_numbers,
             };
+            println!("is mixed {id}");
             self.process_mixed(mixed_block);
         }
     }
@@ -205,6 +203,7 @@ mod test {
 
     use super::*;
     use crate::encoder::Encoder;
+    use crate::real_packets::*;
 
     const MSG_LEN_LONG: usize = 500_002;
     const MSG_LEN_SHORT: usize = 357;
@@ -258,5 +257,60 @@ mod test {
     #[test]
     fn short_zeroes_data_full_cycle() {
         full_cycle(&[0u8; MSG_LEN_SHORT])
+    }
+
+    #[test]
+    fn real_packets() {
+        let mut decoder_1 = Decoder::init(Packet::deserialize(PACKET_RAW_1)).unwrap();
+        assert_eq!(decoder_1.msg_len, [0, 1, 101]);
+        assert_eq!(decoder_1.total_blocks(), 2);
+        assert_eq!(decoder_1.number_of_collected_blocks(), 1);
+        assert!(decoder_1.finalized_content[0].is_some());
+        assert!(decoder_1.finalized_content[1].is_none());
+        decoder_1
+            .add_packet(Packet::deserialize(PACKET_RAW_2))
+            .unwrap();
+        assert_eq!(decoder_1.msg_len, [0, 1, 101]);
+        assert_eq!(decoder_1.total_blocks(), 2);
+        assert_eq!(decoder_1.number_of_collected_blocks(), 2);
+        assert!(decoder_1.finalized_content[0].is_some());
+        assert!(decoder_1.finalized_content[1].is_some());
+        let data_1 = decoder_1.try_read().unwrap();
+
+        let mut decoder_2 = Decoder::init(Packet::deserialize(PACKET_RAW_1)).unwrap();
+        assert_eq!(decoder_2.msg_len, [0, 1, 101]);
+        assert_eq!(decoder_2.total_blocks(), 2);
+        assert_eq!(decoder_2.number_of_collected_blocks(), 1);
+        assert!(decoder_2.finalized_content[0].is_some());
+        assert!(decoder_2.finalized_content[1].is_none());
+        decoder_2
+            .add_packet(Packet::deserialize(PACKET_RAW_3))
+            .unwrap();
+        assert_eq!(decoder_2.msg_len, [0, 1, 101]);
+        assert_eq!(decoder_2.total_blocks(), 2);
+        assert_eq!(decoder_2.number_of_collected_blocks(), 2);
+        assert!(decoder_2.finalized_content[0].is_some());
+        assert!(decoder_2.finalized_content[1].is_some());
+        let data_2 = decoder_2.try_read().unwrap();
+
+        let mut decoder_3 = Decoder::init(Packet::deserialize(PACKET_RAW_2)).unwrap();
+        assert_eq!(decoder_3.msg_len, [0, 1, 101]);
+        assert_eq!(decoder_3.total_blocks(), 2);
+        assert_eq!(decoder_3.number_of_collected_blocks(), 1);
+        assert!(decoder_3.finalized_content[0].is_none());
+        assert!(decoder_3.finalized_content[1].is_some());
+        decoder_3
+            .add_packet(Packet::deserialize(PACKET_RAW_3))
+            .unwrap();
+        assert_eq!(decoder_3.msg_len, [0, 1, 101]);
+        assert_eq!(decoder_3.total_blocks(), 2);
+        assert_eq!(decoder_3.number_of_collected_blocks(), 2);
+        assert!(decoder_3.finalized_content[0].is_some());
+        assert!(decoder_3.finalized_content[1].is_some());
+        assert!(decoder_3.is_ready());
+        let data_3 = decoder_3.try_read().unwrap();
+
+        assert_eq!(data_1, data_2);
+        assert_eq!(data_2, data_3);
     }
 }
