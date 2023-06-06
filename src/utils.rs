@@ -49,3 +49,74 @@ pub fn block_numbers_for_id(
     }
     block_numbers
 }
+
+#[cfg(feature = "std")]
+#[cfg(test)]
+mod test {
+
+    use super::*;
+    use crate::distributions::Distributions;
+
+    const MSG_LEN: usize = 358;
+
+    #[test]
+    fn select_blocks_correctly() {
+        let distributions = Distributions::calculate(MSG_LEN).unwrap();
+        assert_eq!(
+            block_numbers_for_id(
+                &distributions.range_distribution,
+                &distributions.block_number_distribution,
+                u16::from_be_bytes([24, 169])
+            ),
+            vec![]
+        );
+        assert_eq!(
+            block_numbers_for_id(
+                &distributions.range_distribution,
+                &distributions.block_number_distribution,
+                u16::from_be_bytes([24, 173])
+            ),
+            vec![]
+        );
+        assert_eq!(
+            block_numbers_for_id(
+                &distributions.range_distribution,
+                &distributions.block_number_distribution,
+                u16::from_be_bytes([24, 177])
+            ),
+            vec![1]
+        );
+        assert_eq!(
+            block_numbers_for_id(
+                &distributions.range_distribution,
+                &distributions.block_number_distribution,
+                u16::from_be_bytes([24, 178])
+            ),
+            vec![1]
+        );
+        assert_eq!(
+            block_numbers_for_id(
+                &distributions.range_distribution,
+                &distributions.block_number_distribution,
+                u16::from_be_bytes([25, 30])
+            ),
+            vec![0]
+        );
+        assert_eq!(
+            block_numbers_for_id(
+                &distributions.range_distribution,
+                &distributions.block_number_distribution,
+                u16::from_be_bytes([25, 34])
+            ),
+            vec![]
+        );
+        assert_eq!(
+            block_numbers_for_id(
+                &distributions.range_distribution,
+                &distributions.block_number_distribution,
+                u16::from_be_bytes([25, 35])
+            ),
+            vec![1, 0]
+        );
+    }
+}

@@ -260,7 +260,7 @@ mod test {
     }
 
     #[test]
-    fn real_packets() {
+    fn real_packets_1() {
         let mut decoder_1 = Decoder::init(Packet::deserialize(PACKET_RAW_1)).unwrap();
         assert_eq!(decoder_1.msg_len, [0, 1, 101]);
         assert_eq!(decoder_1.total_blocks(), 2);
@@ -312,5 +312,15 @@ mod test {
 
         assert_eq!(data_1, data_2);
         assert_eq!(data_2, data_3);
+    }
+
+    #[test]
+    fn real_packets_2() {
+        let decoder_1 = Decoder::init(Packet::deserialize(PACKET_RAW_4)).unwrap();
+        assert_eq!(decoder_1.msg_len, [0, 1, 102]);
+        assert_eq!(decoder_1.total_blocks(), 2);
+        assert_eq!(decoder_1.number_of_collected_blocks(), 1);
+        assert!(decoder_1.finalized_content[0].is_none());
+        assert!(decoder_1.finalized_content[1].is_some());
     }
 }

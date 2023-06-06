@@ -590,7 +590,7 @@ mod test {
     }
 
     #[test]
-    fn real_packets_metal_mock() {
+    fn real_packets_1_metal_mock() {
         let mut external_memory = ExternalMemoryMockSmall([0u8; 1000]);
 
         let mut decoder_1 =
@@ -601,6 +601,7 @@ mod test {
             decoder_1.number_of_collected_blocks(&mut external_memory),
             1
         );
+        assert_eq!(decoder_1.number_packets_in_buffer, 0);
         assert!(decoder_1.is_block_finalized(&mut external_memory, 0));
         assert!(!decoder_1.is_block_finalized(&mut external_memory, 1));
         decoder_1
@@ -628,6 +629,7 @@ mod test {
             decoder_2.number_of_collected_blocks(&mut external_memory),
             1
         );
+        assert_eq!(decoder_2.number_packets_in_buffer, 0);
         assert!(decoder_2.is_block_finalized(&mut external_memory, 0));
         assert!(!decoder_2.is_block_finalized(&mut external_memory, 1));
         decoder_2
@@ -655,6 +657,7 @@ mod test {
             decoder_3.number_of_collected_blocks(&mut external_memory),
             1
         );
+        assert_eq!(decoder_3.number_packets_in_buffer, 0);
         assert!(!decoder_3.is_block_finalized(&mut external_memory, 0));
         assert!(decoder_3.is_block_finalized(&mut external_memory, 1));
         decoder_3
@@ -672,7 +675,63 @@ mod test {
         let data_3 =
             external_memory.read_external(&external_data_3.start_address, external_data_3.len);
 
+        external_memory = ExternalMemoryMockSmall([0u8; 1000]);
+
+        let mut decoder_4 =
+            DecoderMetal::init(&mut external_memory, Packet::deserialize(PACKET_RAW_3)).unwrap();
+        assert_eq!(decoder_4.msg_len, [0, 1, 101]);
+        assert_eq!(decoder_4.total_blocks(), 2);
+        assert_eq!(
+            decoder_4.number_of_collected_blocks(&mut external_memory),
+            0
+        );
+        assert_eq!(decoder_4.number_packets_in_buffer, 1);
+        assert!(!decoder_4.is_block_finalized(&mut external_memory, 0));
+        assert!(!decoder_4.is_block_finalized(&mut external_memory, 1));
+        decoder_4
+            .add_packet(&mut external_memory, Packet::deserialize(PACKET_RAW_1))
+            .unwrap();
+        assert_eq!(decoder_4.msg_len, [0, 1, 101]);
+        assert_eq!(decoder_4.total_blocks(), 2);
+        assert_eq!(
+            decoder_4.number_of_collected_blocks(&mut external_memory),
+            2
+        );
+        assert!(decoder_4.is_block_finalized(&mut external_memory, 0));
+        assert!(decoder_4.is_block_finalized(&mut external_memory, 1));
+        let external_data_4 = decoder_4.try_read(&mut external_memory).unwrap();
+        let data_4 =
+            external_memory.read_external(&external_data_4.start_address, external_data_4.len);
+
         assert_eq!(data_1, data_2);
         assert_eq!(data_2, data_3);
+        assert_eq!(data_3, data_4);
+    }
+
+    #[test]
+    fn real_packets_2_metal_mock() {
+        let mut external_memory = ExternalMemoryMockSmall([0u8; 1000]);
+
+        let decoder =
+            DecoderMetal::init(&mut external_memory, Packet::deserialize(PACKET_RAW_4)).unwrap();
+        assert_eq!(decoder.msg_len, [0, 1, 102]);
+        assert_eq!(decoder.total_blocks(), 2);
+        assert_eq!(decoder.number_of_collected_blocks(&mut external_memory), 1);
+        assert!(!decoder.is_block_finalized(&mut external_memory, 0));
+        assert!(decoder.is_block_finalized(&mut external_memory, 1));
+    }
+
+    #[test]
+    fn real_packets_3_damaged_metal_mock() {
+        let mut external_memory = ExternalMemoryMockSmall([0u8; 1000]);
+
+        let decoder =
+            DecoderMetal::init(&mut external_memory, Packet::deserialize(PACKET_RAW_5)).unwrap();
+        assert_eq!(decoder.msg_len, [0, 1, 102]);
+        assert_eq!(decoder.total_blocks(), 2);
+        assert_eq!(decoder.number_of_collected_blocks(&mut external_memory), 0);
+        assert!(!decoder.is_block_finalized(&mut external_memory, 0));
+        assert!(!decoder.is_block_finalized(&mut external_memory, 1));
+        assert_eq!(decoder.number_packets_in_buffer, 0);
     }
 }
