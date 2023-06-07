@@ -5,7 +5,7 @@ pub const PACKET_SIZE: usize = BLOCK_SIZE + 5;
 #[derive(Debug)]
 pub struct Packet {
     pub(crate) msg_len: [u8; 3],
-    pub(crate) id: u16,
+    pub id: u16, // TODO: this should be pub(crate)
     pub(crate) block: Block,
 }
 
