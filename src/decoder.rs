@@ -300,7 +300,8 @@ mod test {
         assert!(decoder_3.is_ready());
         let data_3 = decoder_3.try_read().unwrap();
 
-        assert_eq!(data_1, data_2);
-        assert_eq!(data_2, data_3);
+        assert_eq!(data_1, DATA);
+        assert_eq!(data_2, DATA);
+        assert_eq!(data_3, DATA);
     }
 }
