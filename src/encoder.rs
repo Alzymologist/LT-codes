@@ -4,7 +4,7 @@ use crate::block::{Block, BLOCK_SIZE};
 use crate::distributions::Distributions;
 use crate::error::LTError;
 use crate::packet::Packet;
-use crate::utils::{block_numbers_for_id, msg_len_as_usize};
+use crate::utils::{block_numbers_for_id, msg_len_as_usize, number_of_blocks};
 
 #[derive(Debug)]
 pub struct Encoder {
@@ -26,7 +26,8 @@ impl Encoder {
             }
         };
 
-        let distributions = Distributions::calculate(msg_usize)?;
+        let number_of_blocks = number_of_blocks(msg_usize);
+        let distributions = Distributions::calculate(number_of_blocks)?;
 
         Ok(Self {
             id: 0,
