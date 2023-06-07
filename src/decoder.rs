@@ -51,7 +51,6 @@ impl Decoder {
                 body: current_block,
                 block_numbers,
             };
-            println!("is mixed {id}");
             self.process_mixed(mixed_block);
         }
     }
