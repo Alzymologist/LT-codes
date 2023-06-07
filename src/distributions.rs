@@ -6,7 +6,6 @@ use std::vec::Vec;
 
 use rand::distributions::{Uniform, WeightedIndex};
 
-use crate::block::BLOCK_SIZE;
 use crate::error::LTError;
 
 pub const K_PARAM: usize = 500;
@@ -19,15 +18,7 @@ pub struct Distributions {
 }
 
 impl Distributions {
-    pub(crate) fn calculate(msg_usize: usize) -> Result<Self, LTError> {
-        let n = {
-            if msg_usize % BLOCK_SIZE == 0 {
-                msg_usize / BLOCK_SIZE
-            } else {
-                msg_usize / BLOCK_SIZE + 1
-            }
-        };
-
+    pub(crate) fn calculate(n: usize) -> Result<Self, LTError> {
         let mut weights: Vec<f32> = Vec::with_capacity(K_PARAM);
         weights.push(1.0 / n as f32);
         for i in 1..K_PARAM {

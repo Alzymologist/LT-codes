@@ -4,7 +4,7 @@ use crate::block::{Block, BLOCK_SIZE};
 use crate::distributions::Distributions;
 use crate::error::LTError;
 use crate::packet::Packet;
-use crate::utils::{block_numbers_for_id, msg_len_as_usize};
+use crate::utils::{block_numbers_for_id, msg_len_as_usize, number_of_blocks};
 
 #[derive(Debug)]
 pub struct Encoder {
@@ -26,7 +26,8 @@ impl Encoder {
             }
         };
 
-        let distributions = Distributions::calculate(msg_usize)?;
+        let number_of_blocks = number_of_blocks(msg_usize);
+        let distributions = Distributions::calculate(number_of_blocks)?;
 
         Ok(Self {
             id: 0,
@@ -77,5 +78,31 @@ impl Encoder {
             }
         };
         Block { content }
+    }
+}
+
+#[cfg(feature = "std")]
+#[cfg(test)]
+mod test {
+
+    use super::*;
+
+    const MSG_LEN: usize = 358;
+
+    #[test]
+    fn encoder_makes_blocks() {
+        let msg = [0; MSG_LEN];
+        let mut encoder = Encoder::init(&msg).unwrap();
+        encoder.id = u16::from_be_bytes([24, 169]);
+        assert!(encoder.make_packet(&msg).unwrap().is_none());
+
+        encoder.id = u16::from_be_bytes([24, 177]);
+        assert!(encoder.make_packet(&msg).unwrap().is_some());
+
+        encoder.id = u16::from_be_bytes([25, 30]);
+        assert!(encoder.make_packet(&msg).unwrap().is_some());
+
+        encoder.id = u16::from_be_bytes([25, 35]);
+        assert!(encoder.make_packet(&msg).unwrap().is_some());
     }
 }

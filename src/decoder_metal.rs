@@ -4,13 +4,13 @@ use alloc::vec::Vec;
 #[cfg(feature = "std")]
 use std::vec::Vec;
 
-use rand::distributions::{Distribution, Uniform, WeightedIndex};
+use rand::distributions::{Uniform, WeightedIndex};
 
 use crate::block::{Block, IsolatedBlock, MixedBlock, BLOCK_SIZE};
 use crate::distributions::Distributions;
 use crate::error::LTError;
 use crate::packet::Packet;
-use crate::utils::{block_numbers_for_id, make_prng, msg_len_as_usize};
+use crate::utils::{block_numbers_for_id, msg_len_as_usize, number_of_blocks};
 
 pub trait ExternalAddress: Copy {
     fn zero() -> Self;
@@ -54,22 +54,10 @@ impl<A: ExternalAddress> DecoderMetal<A> {
         packet: Packet,
     ) -> Result<Self, LTError> {
         let msg_usize = msg_len_as_usize(packet.msg_len);
-        let number_of_blocks = {
-            if msg_usize % BLOCK_SIZE == 0 {
-                msg_usize / BLOCK_SIZE
-            } else {
-                msg_usize / BLOCK_SIZE + 1
-            }
-        };
-        let distributions = Distributions::calculate(msg_usize)?;
+        let number_of_blocks = number_of_blocks(msg_usize);
+        let distributions = Distributions::calculate(number_of_blocks)?;
         let mut flag_writer_address = A::zero();
-        let number_of_flag_bytes = {
-            if number_of_blocks % 8 == 0 {
-                number_of_blocks / 8
-            } else {
-                number_of_blocks / 8 + 1
-            }
-        };
+        let number_of_flag_bytes = number_of_flag_bytes(number_of_blocks);
         for _i in 0..number_of_flag_bytes {
             external_memory.write_external(&flag_writer_address, &[0]);
             flag_writer_address.shift(1);
@@ -87,24 +75,18 @@ impl<A: ExternalAddress> DecoderMetal<A> {
 
     fn address_finalized_block_flag(&self, block_number: usize) -> AddressBitBlockFlag<A> {
         let msg_usize = msg_len_as_usize(self.msg_len);
-        let number_of_blocks = {
-            if msg_usize % BLOCK_SIZE == 0 {
-                msg_usize / BLOCK_SIZE
-            } else {
-                msg_usize / BLOCK_SIZE + 1
-            }
-        };
+        let number_of_blocks = number_of_blocks(msg_usize);
 
         if block_number > number_of_blocks {
             panic!("block number too high")
         }
 
         let mut address = self.start_address;
-        address.shift(block_number / 8);
+        address.shift(block_number / BITS_IN_BYTE);
 
         AddressBitBlockFlag {
             address,
-            bit: (block_number % 8) as u8,
+            bit: (block_number % BITS_IN_BYTE) as u8,
         }
     }
 
@@ -136,14 +118,7 @@ impl<A: ExternalAddress> DecoderMetal<A> {
         id: u16,
         current_block: Block,
     ) {
-        let mut rng = make_prng(id);
-
-        let d = self.range_distribution.sample(&mut rng);
-
-        let mut block_numbers: Vec<usize> = Vec::new();
-        for _n in 0..d {
-            block_numbers.push(self.block_number_distribution.sample(&mut rng));
-        }
+        let block_numbers = self.block_numbers_for_id(id);
 
         if block_numbers.len() == 1 {
             let isolated_block = IsolatedBlock {
@@ -176,13 +151,7 @@ impl<A: ExternalAddress> DecoderMetal<A> {
     pub fn is_ready<M: ExternalMemory<A>>(&self, external_memory: &mut M) -> bool {
         let mut all_finalized = true;
         let msg_usize = msg_len_as_usize(self.msg_len);
-        let number_of_blocks = {
-            if msg_usize % BLOCK_SIZE == 0 {
-                msg_usize / BLOCK_SIZE
-            } else {
-                msg_usize / BLOCK_SIZE + 1
-            }
-        };
+        let number_of_blocks = number_of_blocks(msg_usize);
         for i in 0..number_of_blocks {
             if !self.is_block_finalized(external_memory, i) {
                 all_finalized = false;
@@ -206,22 +175,24 @@ impl<A: ExternalAddress> DecoderMetal<A> {
         }
     }
 
-    pub fn number_of_collected<M: ExternalMemory<A>>(&self, external_memory: &mut M) -> usize {
+    pub fn number_of_collected_blocks<M: ExternalMemory<A>>(
+        &self,
+        external_memory: &mut M,
+    ) -> usize {
         let mut number_of_collected = 0;
         let msg_usize = msg_len_as_usize(self.msg_len);
-        let number_of_blocks = {
-            if msg_usize % BLOCK_SIZE == 0 {
-                msg_usize / BLOCK_SIZE
-            } else {
-                msg_usize / BLOCK_SIZE + 1
-            }
-        };
+        let number_of_blocks = number_of_blocks(msg_usize);
         for i in 0..number_of_blocks {
             if self.is_block_finalized(external_memory, i) {
                 number_of_collected += 1
             }
         }
         number_of_collected
+    }
+
+    pub fn total_blocks(&self) -> usize {
+        let msg_usize = msg_len_as_usize(self.msg_len);
+        number_of_blocks(msg_usize)
     }
 
     fn block_numbers_for_id(&self, id: u16) -> Vec<usize> {
@@ -342,20 +313,8 @@ impl<A: ExternalAddress> DecoderMetal<A> {
 
     fn address_isolated_block(&self, isolated_block_number: usize) -> A {
         let msg_usize = msg_len_as_usize(self.msg_len);
-        let number_of_blocks = {
-            if msg_usize % BLOCK_SIZE == 0 {
-                msg_usize / BLOCK_SIZE
-            } else {
-                msg_usize / BLOCK_SIZE + 1
-            }
-        };
-        let number_of_flag_bytes = {
-            if number_of_blocks % 8 == 0 {
-                number_of_blocks / 8
-            } else {
-                number_of_blocks / 8 + 1
-            }
-        };
+        let number_of_blocks = number_of_blocks(msg_usize);
+        let number_of_flag_bytes = number_of_flag_bytes(number_of_blocks);
         if isolated_block_number < number_of_blocks {
             let mut address = self.start_address;
             address.shift(number_of_flag_bytes + isolated_block_number * BLOCK_SIZE);
@@ -389,21 +348,8 @@ impl<A: ExternalAddress> DecoderMetal<A> {
     fn address_buffer_start(&self) -> A {
         let mut address = self.start_address;
         let msg_usize = msg_len_as_usize(self.msg_len);
-        let number_of_blocks = {
-            if msg_usize % BLOCK_SIZE == 0 {
-                msg_usize / BLOCK_SIZE
-            } else {
-                msg_usize / BLOCK_SIZE + 1
-            }
-        };
-
-        let number_of_flag_bytes = {
-            if number_of_blocks % 8 == 0 {
-                number_of_blocks / 8
-            } else {
-                number_of_blocks / 8 + 1
-            }
-        };
+        let number_of_blocks = number_of_blocks(msg_usize);
+        let number_of_flag_bytes = number_of_flag_bytes(number_of_blocks);
 
         // start of buffer
         address.shift(number_of_flag_bytes + number_of_blocks * BLOCK_SIZE);
@@ -492,6 +438,16 @@ impl<A: ExternalAddress> DecoderMetal<A> {
     }
 }
 
+const BITS_IN_BYTE: usize = 8;
+
+fn number_of_flag_bytes(number_of_blocks: usize) -> usize {
+    if number_of_blocks % BITS_IN_BYTE == 0 {
+        number_of_blocks / BITS_IN_BYTE
+    } else {
+        number_of_blocks / BITS_IN_BYTE + 1
+    }
+}
+
 #[cfg(feature = "std")]
 #[cfg(test)]
 mod test {
@@ -499,6 +455,7 @@ mod test {
 
     use super::*;
     use crate::encoder::Encoder;
+    use crate::real_packets::*;
 
     const MSG_LEN_LONG: usize = 500_002;
     const COUNTER_STOP: usize = 6000;
@@ -527,6 +484,17 @@ mod test {
         }
         fn read_external(&mut self, address: &Position, len: usize) -> Vec<u8> {
             unsafe { EM[address.0..address.0 + len].to_vec() }
+        }
+    }
+
+    struct ExternalMemoryMockSmall([u8; 1000]);
+
+    impl ExternalMemory<Position> for ExternalMemoryMockSmall {
+        fn write_external(&mut self, address: &Position, data: &[u8]) {
+            self.0[address.0..address.0 + data.len()].copy_from_slice(data)
+        }
+        fn read_external(&mut self, address: &Position, len: usize) -> Vec<u8> {
+            self.0[address.0..address.0 + len].to_vec()
         }
     }
 
@@ -570,5 +538,222 @@ mod test {
         let mut msg = [0; MSG_LEN_LONG];
         msg.try_fill(&mut rng).unwrap();
         full_cycle_metal_mock(&msg)
+    }
+
+    #[test]
+    fn real_packets_1_metal_mock() {
+        let mut external_memory = ExternalMemoryMockSmall([0u8; 1000]);
+
+        let mut decoder_1 =
+            DecoderMetal::init(&mut external_memory, Packet::deserialize(PACKET_RAW_1)).unwrap();
+        assert_eq!(decoder_1.msg_len, [0, 1, 101]);
+        assert_eq!(decoder_1.total_blocks(), 2);
+        assert_eq!(
+            decoder_1.number_of_collected_blocks(&mut external_memory),
+            1
+        );
+        assert_eq!(decoder_1.number_packets_in_buffer, 0);
+        assert!(decoder_1.is_block_finalized(&mut external_memory, 0));
+        assert!(!decoder_1.is_block_finalized(&mut external_memory, 1));
+        decoder_1
+            .add_packet(&mut external_memory, Packet::deserialize(PACKET_RAW_2))
+            .unwrap();
+        assert_eq!(decoder_1.msg_len, [0, 1, 101]);
+        assert_eq!(decoder_1.total_blocks(), 2);
+        assert_eq!(
+            decoder_1.number_of_collected_blocks(&mut external_memory),
+            2
+        );
+        assert!(decoder_1.is_block_finalized(&mut external_memory, 0));
+        assert!(decoder_1.is_block_finalized(&mut external_memory, 1));
+        let external_data_1 = decoder_1.try_read(&mut external_memory).unwrap();
+        let data_1 =
+            external_memory.read_external(&external_data_1.start_address, external_data_1.len);
+
+        external_memory = ExternalMemoryMockSmall([0u8; 1000]);
+
+        let mut decoder_2 =
+            DecoderMetal::init(&mut external_memory, Packet::deserialize(PACKET_RAW_1)).unwrap();
+        assert_eq!(decoder_2.msg_len, [0, 1, 101]);
+        assert_eq!(decoder_2.total_blocks(), 2);
+        assert_eq!(
+            decoder_2.number_of_collected_blocks(&mut external_memory),
+            1
+        );
+        assert_eq!(decoder_2.number_packets_in_buffer, 0);
+        assert!(decoder_2.is_block_finalized(&mut external_memory, 0));
+        assert!(!decoder_2.is_block_finalized(&mut external_memory, 1));
+        decoder_2
+            .add_packet(&mut external_memory, Packet::deserialize(PACKET_RAW_3))
+            .unwrap();
+        assert_eq!(decoder_2.msg_len, [0, 1, 101]);
+        assert_eq!(decoder_2.total_blocks(), 2);
+        assert_eq!(
+            decoder_2.number_of_collected_blocks(&mut external_memory),
+            2
+        );
+        assert!(decoder_2.is_block_finalized(&mut external_memory, 0));
+        assert!(decoder_2.is_block_finalized(&mut external_memory, 1));
+        let external_data_2 = decoder_2.try_read(&mut external_memory).unwrap();
+        let data_2 =
+            external_memory.read_external(&external_data_2.start_address, external_data_2.len);
+
+        external_memory = ExternalMemoryMockSmall([0u8; 1000]);
+
+        let mut decoder_3 =
+            DecoderMetal::init(&mut external_memory, Packet::deserialize(PACKET_RAW_2)).unwrap();
+        assert_eq!(decoder_3.msg_len, [0, 1, 101]);
+        assert_eq!(decoder_3.total_blocks(), 2);
+        assert_eq!(
+            decoder_3.number_of_collected_blocks(&mut external_memory),
+            1
+        );
+        assert_eq!(decoder_3.number_packets_in_buffer, 0);
+        assert!(!decoder_3.is_block_finalized(&mut external_memory, 0));
+        assert!(decoder_3.is_block_finalized(&mut external_memory, 1));
+        decoder_3
+            .add_packet(&mut external_memory, Packet::deserialize(PACKET_RAW_3))
+            .unwrap();
+        assert_eq!(decoder_3.msg_len, [0, 1, 101]);
+        assert_eq!(decoder_3.total_blocks(), 2);
+        assert_eq!(
+            decoder_3.number_of_collected_blocks(&mut external_memory),
+            2
+        );
+        assert!(decoder_3.is_block_finalized(&mut external_memory, 0));
+        assert!(decoder_3.is_block_finalized(&mut external_memory, 1));
+        let external_data_3 = decoder_3.try_read(&mut external_memory).unwrap();
+        let data_3 =
+            external_memory.read_external(&external_data_3.start_address, external_data_3.len);
+
+        external_memory = ExternalMemoryMockSmall([0u8; 1000]);
+
+        let mut decoder_4 =
+            DecoderMetal::init(&mut external_memory, Packet::deserialize(PACKET_RAW_3)).unwrap();
+        assert_eq!(decoder_4.msg_len, [0, 1, 101]);
+        assert_eq!(decoder_4.total_blocks(), 2);
+        assert_eq!(
+            decoder_4.number_of_collected_blocks(&mut external_memory),
+            0
+        );
+        assert_eq!(decoder_4.number_packets_in_buffer, 1);
+        assert!(!decoder_4.is_block_finalized(&mut external_memory, 0));
+        assert!(!decoder_4.is_block_finalized(&mut external_memory, 1));
+        decoder_4
+            .add_packet(&mut external_memory, Packet::deserialize(PACKET_RAW_1))
+            .unwrap();
+        assert_eq!(decoder_4.msg_len, [0, 1, 101]);
+        assert_eq!(decoder_4.total_blocks(), 2);
+        assert_eq!(
+            decoder_4.number_of_collected_blocks(&mut external_memory),
+            2
+        );
+        assert!(decoder_4.is_block_finalized(&mut external_memory, 0));
+        assert!(decoder_4.is_block_finalized(&mut external_memory, 1));
+        let external_data_4 = decoder_4.try_read(&mut external_memory).unwrap();
+        let data_4 =
+            external_memory.read_external(&external_data_4.start_address, external_data_4.len);
+
+        assert_eq!(data_1, DATA);
+        assert_eq!(data_2, DATA);
+        assert_eq!(data_3, DATA);
+        assert_eq!(data_4, DATA);
+    }
+
+    #[test]
+    fn real_packets_2_damaged_metal_mock() {
+        let mut external_memory = ExternalMemoryMockSmall([0u8; 1000]);
+
+        let decoder =
+            DecoderMetal::init(&mut external_memory, Packet::deserialize(PACKET_RAW_4)).unwrap();
+        assert_eq!(decoder.msg_len, [0, 1, 101]);
+        assert_eq!(decoder.total_blocks(), 2);
+        assert_eq!(decoder.number_of_collected_blocks(&mut external_memory), 0);
+        assert!(!decoder.is_block_finalized(&mut external_memory, 0));
+        assert!(!decoder.is_block_finalized(&mut external_memory, 1));
+        assert_eq!(decoder.number_packets_in_buffer, 0);
+    }
+
+    #[test]
+    fn real_packets_3_metal_mock() {
+        let mut external_memory = ExternalMemoryMockSmall([0u8; 1000]);
+
+        // [1, 0] sequence
+        let mut decoder =
+            DecoderMetal::init(&mut external_memory, Packet::deserialize(PACKET_RAW_3)).unwrap();
+
+        // add [0, 1] sequence, block goes to buffer, still no blocks ready
+        decoder
+            .add_packet(&mut external_memory, Packet::deserialize(PACKET_RAW_5))
+            .unwrap();
+        assert_eq!(decoder.total_blocks(), 2);
+        assert_eq!(decoder.number_of_collected_blocks(&mut external_memory), 0);
+        assert!(!decoder.is_block_finalized(&mut external_memory, 0));
+        assert!(!decoder.is_block_finalized(&mut external_memory, 1));
+        assert_eq!(decoder.number_packets_in_buffer, 2);
+
+        // add [0], solved
+        decoder
+            .add_packet(&mut external_memory, Packet::deserialize(PACKET_RAW_1))
+            .unwrap();
+        assert_eq!(decoder.total_blocks(), 2);
+        assert_eq!(decoder.number_of_collected_blocks(&mut external_memory), 2);
+        assert!(decoder.is_block_finalized(&mut external_memory, 0));
+        assert!(decoder.is_block_finalized(&mut external_memory, 1));
+        assert_eq!(decoder.number_packets_in_buffer, 2);
+        let external_data = decoder.try_read(&mut external_memory).unwrap();
+        let data = external_memory.read_external(&external_data.start_address, external_data.len);
+
+        assert_eq!(data, DATA);
+    }
+
+    #[test]
+    fn real_packets_4_metal_mock() {
+        let mut external_memory = ExternalMemoryMockSmall([0u8; 1000]);
+
+        // [0, 1] sequence
+        let mut decoder =
+            DecoderMetal::init(&mut external_memory, Packet::deserialize(PACKET_RAW_5)).unwrap();
+
+        // add [1, 0] sequence, block goes to buffer, still no blocks ready
+        decoder
+            .add_packet(&mut external_memory, Packet::deserialize(PACKET_RAW_3))
+            .unwrap();
+        assert_eq!(decoder.total_blocks(), 2);
+        assert_eq!(decoder.number_of_collected_blocks(&mut external_memory), 0);
+        assert!(!decoder.is_block_finalized(&mut external_memory, 0));
+        assert!(!decoder.is_block_finalized(&mut external_memory, 1));
+        assert_eq!(decoder.number_packets_in_buffer, 2);
+
+        // add [0], solved
+        decoder
+            .add_packet(&mut external_memory, Packet::deserialize(PACKET_RAW_1))
+            .unwrap();
+        assert_eq!(decoder.total_blocks(), 2);
+        assert_eq!(decoder.number_of_collected_blocks(&mut external_memory), 2);
+        assert!(decoder.is_block_finalized(&mut external_memory, 0));
+        assert!(decoder.is_block_finalized(&mut external_memory, 1));
+        assert_eq!(decoder.number_packets_in_buffer, 2);
+        let external_data = decoder.try_read(&mut external_memory).unwrap();
+        let data = external_memory.read_external(&external_data.start_address, external_data.len);
+
+        assert_eq!(data, DATA);
+    }
+
+    #[test]
+    fn real_packets_5_metal_mock() {
+        let mut external_memory = ExternalMemoryMockSmall([0u8; 1000]);
+
+        // [0, 1] sequence
+        let mut decoder =
+            DecoderMetal::init(&mut external_memory, Packet::deserialize(PACKET_RAW_2)).unwrap();
+        // add [0], solved
+        decoder
+            .add_packet(&mut external_memory, Packet::deserialize(PACKET_RAW_3))
+            .unwrap();
+        let external_data = decoder.try_read(&mut external_memory).unwrap();
+        let data = external_memory.read_external(&external_data.start_address, external_data.len);
+
+        assert_eq!(data, DATA);
     }
 }

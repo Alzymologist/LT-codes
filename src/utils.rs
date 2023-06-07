@@ -9,7 +9,9 @@ use rand::distributions::{Distribution, Uniform, WeightedIndex};
 use rand_core::SeedableRng;
 use rand_pcg::Lcg64Xsh32;
 
-pub fn make_prng(id: u16) -> Lcg64Xsh32 {
+use crate::block::BLOCK_SIZE;
+
+fn make_prng(id: u16) -> Lcg64Xsh32 {
     let seed = blake2b(16, b"kampela", &id.to_be_bytes())
         .as_bytes()
         .try_into()
@@ -48,4 +50,109 @@ pub fn block_numbers_for_id(
         }
     }
     block_numbers
+}
+
+pub fn number_of_blocks(msg_usize: usize) -> usize {
+    if msg_usize % BLOCK_SIZE == 0 {
+        msg_usize / BLOCK_SIZE
+    } else {
+        msg_usize / BLOCK_SIZE + 1
+    }
+}
+
+#[cfg(feature = "std")]
+#[cfg(test)]
+mod test {
+
+    use super::*;
+    use crate::distributions::Distributions;
+
+    const NUMBER_OF_BLOCKS: usize = 2;
+
+    #[test]
+    fn select_blocks_correctly_1() {
+        let distributions = Distributions::calculate(NUMBER_OF_BLOCKS).unwrap();
+        let variants = [vec![], vec![0], vec![1], vec![0, 1], vec![1, 0]];
+        for id in 0..u16::MAX {
+            let block_numbers = block_numbers_for_id(
+                &distributions.range_distribution,
+                &distributions.block_number_distribution,
+                id,
+            );
+            assert!(
+                variants.contains(&block_numbers),
+                "Unexpected variant {:?} at id {id}",
+                block_numbers
+            );
+        }
+    }
+
+    #[test]
+    fn select_blocks_correctly_2() {
+        let distributions = Distributions::calculate(NUMBER_OF_BLOCKS).unwrap();
+        assert_eq!(
+            block_numbers_for_id(
+                &distributions.range_distribution,
+                &distributions.block_number_distribution,
+                u16::from_be_bytes([24, 169])
+            ),
+            vec![]
+        );
+        assert_eq!(
+            block_numbers_for_id(
+                &distributions.range_distribution,
+                &distributions.block_number_distribution,
+                u16::from_be_bytes([24, 173])
+            ),
+            vec![]
+        );
+        assert_eq!(
+            block_numbers_for_id(
+                &distributions.range_distribution,
+                &distributions.block_number_distribution,
+                u16::from_be_bytes([24, 177])
+            ),
+            vec![1]
+        );
+        assert_eq!(
+            block_numbers_for_id(
+                &distributions.range_distribution,
+                &distributions.block_number_distribution,
+                u16::from_be_bytes([24, 178])
+            ),
+            vec![1]
+        );
+        assert_eq!(
+            block_numbers_for_id(
+                &distributions.range_distribution,
+                &distributions.block_number_distribution,
+                u16::from_be_bytes([25, 30])
+            ),
+            vec![0]
+        );
+        assert_eq!(
+            block_numbers_for_id(
+                &distributions.range_distribution,
+                &distributions.block_number_distribution,
+                u16::from_be_bytes([25, 34])
+            ),
+            vec![]
+        );
+        assert_eq!(
+            block_numbers_for_id(
+                &distributions.range_distribution,
+                &distributions.block_number_distribution,
+                u16::from_be_bytes([25, 35])
+            ),
+            vec![1, 0]
+        );
+        assert_eq!(
+            block_numbers_for_id(
+                &distributions.range_distribution,
+                &distributions.block_number_distribution,
+                u16::from_be_bytes([0, 9])
+            ),
+            vec![0, 1]
+        );
+    }
 }
