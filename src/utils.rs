@@ -27,14 +27,14 @@ pub fn msg_len_as_usize(msg_len: [u8; 3]) -> usize {
 
 pub fn block_numbers_for_id(
     range_distribution: &WeightedIndex<f32>,
-    block_number_distribution: &Uniform<usize>,
+    block_number_distribution: &Uniform<u32>,
     id: u16,
 ) -> Vec<usize> {
     let mut rng = make_prng(id);
     let d = range_distribution.sample(&mut rng);
     let mut block_numbers: Vec<usize> = Vec::new();
     for _n in 0..d {
-        let proposed_number = block_number_distribution.sample(&mut rng);
+        let proposed_number = block_number_distribution.sample(&mut rng) as usize;
         let mut already_at_index = None;
         for (i, block_number) in block_numbers.iter().enumerate() {
             if block_number == &proposed_number {
@@ -67,7 +67,7 @@ mod test {
     use super::*;
     use crate::distributions::Distributions;
 
-    const NUMBER_OF_BLOCKS: usize = 2;
+    const NUMBER_OF_BLOCKS: u32 = 2;
 
     #[test]
     fn select_blocks_correctly_1() {
@@ -81,8 +81,7 @@ mod test {
             );
             assert!(
                 variants.contains(&block_numbers),
-                "Unexpected variant {:?} at id {id}",
-                block_numbers
+                "Unexpected variant {block_numbers:?} at id {id}",
             );
         }
     }
@@ -94,63 +93,59 @@ mod test {
             block_numbers_for_id(
                 &distributions.range_distribution,
                 &distributions.block_number_distribution,
-                u16::from_be_bytes([24, 169])
+                u16::from_be_bytes([0, 0])
             ),
             vec![]
         );
+    }
+
+    #[test]
+    fn select_blocks_correctly_3() {
+        let distributions = Distributions::calculate(NUMBER_OF_BLOCKS).unwrap();
         assert_eq!(
             block_numbers_for_id(
                 &distributions.range_distribution,
                 &distributions.block_number_distribution,
-                u16::from_be_bytes([24, 173])
-            ),
-            vec![]
-        );
-        assert_eq!(
-            block_numbers_for_id(
-                &distributions.range_distribution,
-                &distributions.block_number_distribution,
-                u16::from_be_bytes([24, 177])
-            ),
-            vec![1]
-        );
-        assert_eq!(
-            block_numbers_for_id(
-                &distributions.range_distribution,
-                &distributions.block_number_distribution,
-                u16::from_be_bytes([24, 178])
-            ),
-            vec![1]
-        );
-        assert_eq!(
-            block_numbers_for_id(
-                &distributions.range_distribution,
-                &distributions.block_number_distribution,
-                u16::from_be_bytes([25, 30])
+                u16::from_be_bytes([0, 3])
             ),
             vec![0]
         );
+    }
+
+    #[test]
+    fn select_blocks_correctly_4() {
+        let distributions = Distributions::calculate(NUMBER_OF_BLOCKS).unwrap();
         assert_eq!(
             block_numbers_for_id(
                 &distributions.range_distribution,
                 &distributions.block_number_distribution,
-                u16::from_be_bytes([25, 34])
+                u16::from_be_bytes([0, 2])
             ),
-            vec![]
+            vec![1]
         );
+    }
+
+    #[test]
+    fn select_blocks_correctly_5() {
+        let distributions = Distributions::calculate(NUMBER_OF_BLOCKS).unwrap();
         assert_eq!(
             block_numbers_for_id(
                 &distributions.range_distribution,
                 &distributions.block_number_distribution,
-                u16::from_be_bytes([25, 35])
+                u16::from_be_bytes([0, 6])
             ),
             vec![1, 0]
         );
+    }
+
+    #[test]
+    fn select_blocks_correctly_6() {
+        let distributions = Distributions::calculate(NUMBER_OF_BLOCKS).unwrap();
         assert_eq!(
             block_numbers_for_id(
                 &distributions.range_distribution,
                 &distributions.block_number_distribution,
-                u16::from_be_bytes([0, 9])
+                u16::from_be_bytes([0, 14])
             ),
             vec![0, 1]
         );
