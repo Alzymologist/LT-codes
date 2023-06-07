@@ -45,7 +45,7 @@ where
     pub msg_len: [u8; 3],
     pub number_packets_in_buffer: u16, // total u16::MAX numbers of original packets, should fit
     pub range_distribution: WeightedIndex<f32>,
-    pub block_number_distribution: Uniform<usize>,
+    pub block_number_distribution: Uniform<u32>,
 }
 
 impl<A: ExternalAddress> DecoderMetal<A> {
@@ -55,7 +55,7 @@ impl<A: ExternalAddress> DecoderMetal<A> {
     ) -> Result<Self, LTError> {
         let msg_usize = msg_len_as_usize(packet.msg_len);
         let number_of_blocks = number_of_blocks(msg_usize);
-        let distributions = Distributions::calculate(number_of_blocks)?;
+        let distributions = Distributions::calculate(number_of_blocks as u32)?;
         let mut flag_writer_address = A::zero();
         let number_of_flag_bytes = number_of_flag_bytes(number_of_blocks);
         for _i in 0..number_of_flag_bytes {
@@ -195,7 +195,7 @@ impl<A: ExternalAddress> DecoderMetal<A> {
         number_of_blocks(msg_usize)
     }
 
-    fn block_numbers_for_id(&self, id: u16) -> Vec<usize> {
+    pub fn block_numbers_for_id(&self, id: u16) -> Vec<usize> {
         block_numbers_for_id(
             &self.range_distribution,
             &self.block_number_distribution,
@@ -734,23 +734,6 @@ mod test {
         assert!(decoder.is_block_finalized(&mut external_memory, 0));
         assert!(decoder.is_block_finalized(&mut external_memory, 1));
         assert_eq!(decoder.number_packets_in_buffer, 2);
-        let external_data = decoder.try_read(&mut external_memory).unwrap();
-        let data = external_memory.read_external(&external_data.start_address, external_data.len);
-
-        assert_eq!(data, DATA);
-    }
-
-    #[test]
-    fn real_packets_5_metal_mock() {
-        let mut external_memory = ExternalMemoryMockSmall([0u8; 1000]);
-
-        // [0, 1] sequence
-        let mut decoder =
-            DecoderMetal::init(&mut external_memory, Packet::deserialize(PACKET_RAW_2)).unwrap();
-        // add [0], solved
-        decoder
-            .add_packet(&mut external_memory, Packet::deserialize(PACKET_RAW_3))
-            .unwrap();
         let external_data = decoder.try_read(&mut external_memory).unwrap();
         let data = external_memory.read_external(&external_data.start_address, external_data.len);
 

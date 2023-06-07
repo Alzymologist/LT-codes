@@ -11,7 +11,7 @@ use crate::utils::{block_numbers_for_id, msg_len_as_usize, number_of_blocks};
 #[derive(Debug)]
 pub struct Decoder {
     range_distribution: WeightedIndex<f32>,
-    block_number_distribution: Uniform<usize>,
+    block_number_distribution: Uniform<u32>,
     msg_len: [u8; 3],
     finalized_content: Vec<Option<Block>>,
     buffer: Vec<MixedBlock>,
@@ -21,7 +21,7 @@ impl Decoder {
     pub fn init(packet: Packet) -> Result<Self, LTError> {
         let msg_usize = msg_len_as_usize(packet.msg_len);
         let number_of_blocks = number_of_blocks(msg_usize);
-        let distributions = Distributions::calculate(number_of_blocks)?;
+        let distributions = Distributions::calculate(number_of_blocks as u32)?;
         let mut decoder = Self {
             range_distribution: distributions.range_distribution,
             block_number_distribution: distributions.block_number_distribution,

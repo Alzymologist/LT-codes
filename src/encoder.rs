@@ -11,7 +11,7 @@ pub struct Encoder {
     pub(crate) id: u16,
     msg_len: [u8; 3],
     range_distribution: WeightedIndex<f32>,
-    block_number_distribution: Uniform<usize>,
+    block_number_distribution: Uniform<u32>,
 }
 
 impl Encoder {
@@ -27,7 +27,7 @@ impl Encoder {
         };
 
         let number_of_blocks = number_of_blocks(msg_usize);
-        let distributions = Distributions::calculate(number_of_blocks)?;
+        let distributions = Distributions::calculate(number_of_blocks as u32)?;
 
         Ok(Self {
             id: 0,
@@ -87,22 +87,40 @@ mod test {
 
     use super::*;
 
-    const MSG_LEN: usize = 358;
+    const MSG: &[u8] = &[0; 358];
 
     #[test]
-    fn encoder_makes_blocks() {
-        let msg = [0; MSG_LEN];
-        let mut encoder = Encoder::init(&msg).unwrap();
-        encoder.id = u16::from_be_bytes([24, 169]);
-        assert!(encoder.make_packet(&msg).unwrap().is_none());
+    fn encoder_makes_blocks_1() {
+        let mut encoder = Encoder::init(MSG).unwrap();
+        encoder.id = u16::from_be_bytes([0, 0]);
+        assert!(encoder.make_packet(MSG).unwrap().is_none());
+    }
 
-        encoder.id = u16::from_be_bytes([24, 177]);
-        assert!(encoder.make_packet(&msg).unwrap().is_some());
+    #[test]
+    fn encoder_makes_blocks_2() {
+        let mut encoder = Encoder::init(MSG).unwrap();
+        encoder.id = u16::from_be_bytes([0, 3]);
+        assert!(encoder.make_packet(MSG).unwrap().is_some());
+    }
 
-        encoder.id = u16::from_be_bytes([25, 30]);
-        assert!(encoder.make_packet(&msg).unwrap().is_some());
+    #[test]
+    fn encoder_makes_blocks_3() {
+        let mut encoder = Encoder::init(MSG).unwrap();
+        encoder.id = u16::from_be_bytes([0, 2]);
+        assert!(encoder.make_packet(MSG).unwrap().is_some());
+    }
 
-        encoder.id = u16::from_be_bytes([25, 35]);
-        assert!(encoder.make_packet(&msg).unwrap().is_some());
+    #[test]
+    fn encoder_makes_blocks_4() {
+        let mut encoder = Encoder::init(MSG).unwrap();
+        encoder.id = u16::from_be_bytes([0, 6]);
+        assert!(encoder.make_packet(MSG).unwrap().is_some());
+    }
+
+    #[test]
+    fn encoder_makes_blocks_5() {
+        let mut encoder = Encoder::init(MSG).unwrap();
+        encoder.id = u16::from_be_bytes([0, 14]);
+        assert!(encoder.make_packet(MSG).unwrap().is_some());
     }
 }

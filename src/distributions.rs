@@ -14,11 +14,11 @@ pub const C_PARAM: f32 = 0.5;
 
 pub struct Distributions {
     pub(crate) range_distribution: WeightedIndex<f32>,
-    pub(crate) block_number_distribution: Uniform<usize>,
+    pub(crate) block_number_distribution: Uniform<u32>,
 }
 
 impl Distributions {
-    pub(crate) fn calculate(n: usize) -> Result<Self, LTError> {
+    pub(crate) fn calculate(n: u32) -> Result<Self, LTError> {
         let mut weights: Vec<f32> = Vec::with_capacity(K_PARAM);
         weights.push(1.0 / n as f32);
         for i in 1..K_PARAM {
