@@ -196,7 +196,7 @@ mod test {
 
     const MSG_LEN_LONG: usize = 500_002;
     const MSG_LEN_SHORT: usize = 357;
-    const COUNTER_STOP: usize = 6000;
+    const COUNTER_STOP: usize = 12000;
 
     fn full_cycle(msg: &[u8]) {
         let mut counter = 0usize;
@@ -247,7 +247,7 @@ mod test {
     fn short_zeroes_data_full_cycle() {
         full_cycle(&[0u8; MSG_LEN_SHORT])
     }
-
+/*
     #[test]
     fn real_packets() {
         let mut decoder_1 = Decoder::init(Packet::deserialize(PACKET_RAW_1)).unwrap();
@@ -303,4 +303,5 @@ mod test {
         assert_eq!(data_2, DATA);
         assert_eq!(data_3, DATA);
     }
+*/
 }

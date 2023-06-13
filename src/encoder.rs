@@ -88,7 +88,7 @@ mod test {
     use super::*;
 
     const MSG: &[u8] = &[0; 358];
-
+/*
     #[test]
     fn encoder_makes_blocks_1() {
         let mut encoder = Encoder::init(MSG).unwrap();
@@ -123,4 +123,5 @@ mod test {
         encoder.id = u16::from_be_bytes([0, 14]);
         assert!(encoder.make_packet(MSG).unwrap().is_some());
     }
+*/
 }

@@ -4,7 +4,7 @@ use alloc::vec::Vec;
 #[cfg(feature = "std")]
 use std::vec::Vec;
 
-pub const BLOCK_SIZE: usize = 245;
+pub const BLOCK_SIZE: usize = 120;
 
 #[derive(Clone, Debug)]
 pub struct Block {
