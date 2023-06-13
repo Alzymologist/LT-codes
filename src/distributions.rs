@@ -8,7 +8,7 @@ use rand::distributions::{Uniform, WeightedIndex};
 
 use crate::error::LTError;
 
-pub const K_PARAM: usize = 100;
+pub const K_PARAM: usize = 10;
 pub const DELTA_PARAM: f32 = 0.01;
 pub const C_PARAM: f32 = 0.5;
 
