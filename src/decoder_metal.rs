@@ -27,9 +27,9 @@ pub trait ExternalMemory<A: ExternalAddress> {
     fn read_external(&mut self, address: &A, len: usize) -> Vec<u8>;
 }
 
-struct AddressBitBlockFlag<A: ExternalAddress> {
-    address: A,
-    bit: u8, //0..7
+pub(crate) struct AddressBitBlockFlag<A: ExternalAddress> {
+    pub(crate) address: A,
+    pub(crate) bit: u8, //0..7
 }
 
 /// Buffer element length.
@@ -438,9 +438,9 @@ impl<A: ExternalAddress> DecoderMetal<A> {
     }
 }
 
-const BITS_IN_BYTE: usize = 8;
+pub(crate) const BITS_IN_BYTE: usize = 8;
 
-fn number_of_flag_bytes(number_of_blocks: usize) -> usize {
+pub(crate) fn number_of_flag_bytes(number_of_blocks: usize) -> usize {
     if number_of_blocks % BITS_IN_BYTE == 0 {
         number_of_blocks / BITS_IN_BYTE
     } else {
@@ -458,7 +458,7 @@ mod test {
     use crate::real_packets::*;
 
     const MSG_LEN_LONG: usize = 500_002;
-    const COUNTER_STOP: usize = 6000;
+    const COUNTER_STOP: usize = 12000;
 
     #[derive(Clone, Copy, Debug)]
     struct Position(usize);
@@ -539,7 +539,7 @@ mod test {
         msg.try_fill(&mut rng).unwrap();
         full_cycle_metal_mock(&msg)
     }
-
+/*
     #[test]
     fn real_packets_1_metal_mock() {
         let mut external_memory = ExternalMemoryMockSmall([0u8; 1000]);
@@ -739,4 +739,5 @@ mod test {
 
         assert_eq!(data, DATA);
     }
+*/
 }

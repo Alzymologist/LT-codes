@@ -12,12 +12,11 @@ pub mod block;
 
 #[cfg(feature = "std")]
 pub mod decoder;
-
-#[cfg(any(not(feature = "std"), test))]
 pub mod decoder_metal;
 pub mod distributions;
 pub mod encoder;
 pub mod error;
+pub mod mock_worst_case;
 pub mod packet;
 
 #[cfg(all(feature = "std", test))]
